@@ -51,40 +51,23 @@ func main() {
 	fmt.Println("repository:", repo.ID, repo.Name)
 	fmt.Println("found repository:", found.ID, found.Name)
 
-	obj, err := app.CreateObject(ctx, repo.ID, "README.md", []byte("hello"))
+	commit, ref, err := app.CommitToRef(ctx, repo.ID, "main", []engine.CommitChange{
+		{
+			Path: "README.md",
+			Data: []byte("hello"),
+		},
+	}, "initial commit")
+	if errors.Is(err, engine.ErrNoChanges) {
+		ref, err = app.GetRef(ctx, repo.ID, "main")
+		fmt.Println("ref unchanged:", ref.Name, ref.CommitID)
+	}
 	if err != nil {
 		panic(err)
 	}
-
-	fmt.Println("created object:", obj.ID, obj.Path)
-
-	foundObj, err := app.GetObject(ctx, obj.ID)
-	if err != nil {
-		panic(err)
+	if commit.ID != "" {
+		fmt.Println("created commit:", commit.ID, commit.Message)
+		fmt.Println("set ref:", ref.Name, ref.CommitID)
 	}
-
-	fmt.Println("found object:", foundObj.ID, foundObj.Path)
-
-	commit, err := app.CreateCommit(ctx, repo.ID, []engine.ObjectID{obj.ID}, "initial commit")
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println("created commit:", commit.ID, commit.Message)
-
-	foundCommit, err := app.GetCommit(ctx, commit.ID)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println("found commit:", foundCommit.ID, foundCommit.Message)
-
-	ref, err := app.SetRef(ctx, repo.ID, "main", commit.ID)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println("set ref:", ref.Name, ref.CommitID)
 
 	foundRef, err := app.GetRef(ctx, repo.ID, "main")
 	if err != nil {
@@ -92,4 +75,11 @@ func main() {
 	}
 
 	fmt.Println("found ref:", foundRef.Name, foundRef.CommitID)
+
+	foundCommit, err := app.GetCommit(ctx, foundRef.CommitID)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("found commit:", foundCommit.ID, foundCommit.Message)
 }

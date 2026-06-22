@@ -1,17 +1,22 @@
 # go-versi
 
-`go-versi` is a small Go foundation for a repository engine.
+`go-versi` is a small Go foundation for learning how a repository/versioning
+engine works.
 
-For now, it does four things:
+Current features:
 
-- create a repository
-- get a repository by ID
-- create an object inside a repository
-- get an object by ID
-- create a commit
-- get a commit by ID
+- create and get a repository
+- create and get an object inside a repository
+- store a SHA-256 content hash for each object
+- create and get a commit
+- set and get a ref, such as `main`
+- avoid creating a new object, commit, or ref update when the file paths and content did not change
 
-This keeps the first step easy to understand.
+Current flow:
+
+```text
+repository -> object -> commit -> ref(main)
+```
 
 ## Verify
 
@@ -41,9 +46,17 @@ Run the demo:
 go run .
 ```
 
-The demo creates `repo-1`, reads it back from PostgreSQL, creates a
-`README.md` object, reads that object back too, commit and get the commit, set and get the ref (pointer to the latest commit)
-If `repo-1` already exists, it reads the existing repository instead.
+The demo:
+
+- creates or loads `repo-1`
+- checks whether `README.md` changed compared to `main`
+- creates a `README.md` object only when content changed
+- creates a commit only when content changed
+- sets `main` only when content changed
+- reads the current ref and commit back from PostgreSQL
+
+If `main` already points to the same file paths and content, the demo prints
+`ref unchanged` without creating a new object or commit.
 
 ## Docker
 
@@ -53,7 +66,7 @@ Run the test suite in Docker:
 docker compose run --rm app
 ```
 
-The database URL is:
+The local database URL is:
 
 ```text
 postgres://goversi:goversi@localhost:5439/goversi?sslmode=disable

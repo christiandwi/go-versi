@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ type Tx interface {
 	GetRepository(ctx context.Context, id RepositoryID) (Repository, error)
 	CreateObject(ctx context.Context, obj Object) error
 	GetObject(ctx context.Context, id ObjectID) (Object, error)
+	GetObjectSummary(ctx context.Context, id ObjectID) (ObjectSummary, error)
 	CreateCommit(ctx context.Context, commit Commit) error
 	GetCommit(ctx context.Context, id CommitID) (Commit, error)
 	SetRef(ctx context.Context, ref Ref) error
@@ -86,6 +88,7 @@ func (e *Engine) CreateObject(ctx context.Context, repoID RepositoryID, objectPa
 		RepositoryID: repoID,
 		Path:         objectPath,
 		Data:         append([]byte(nil), data...),
+		ContentHash:  HashObjectContent(data),
 		CreatedAt:    e.now().UTC(),
 	}
 
@@ -144,7 +147,7 @@ func (e *Engine) CreateCommit(ctx context.Context, repoID RepositoryID, objectID
 		}
 
 		for _, objectID := range objectIDs {
-			obj, err := tx.GetObject(ctx, objectID)
+			obj, err := tx.GetObjectSummary(ctx, objectID)
 			if err != nil {
 				return err
 			}
@@ -205,6 +208,28 @@ func (e *Engine) SetRef(ctx context.Context, repoID RepositoryID, name string, c
 			return fmt.Errorf("%w: commit %q belongs to repository %q", ErrValidation, commitID, commit.RepositoryID)
 		}
 
+		currentRef, err := tx.GetRef(ctx, repoID, name)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return err
+		}
+		if err == nil {
+			if currentRef.CommitID == commitID {
+				return fmt.Errorf("%w: ref %q already points to commit %q", ErrNoChanges, name, commitID)
+			}
+
+			currentCommit, err := tx.GetCommit(ctx, currentRef.CommitID)
+			if err != nil {
+				return err
+			}
+			same, err := sameSnapshot(ctx, tx, currentCommit, commit)
+			if err != nil {
+				return err
+			}
+			if same {
+				return fmt.Errorf("%w: ref %q already points to the same content", ErrNoChanges, name)
+			}
+		}
+
 		return tx.SetRef(ctx, ref)
 	})
 	if err != nil {
@@ -227,4 +252,180 @@ func (e *Engine) GetRef(ctx context.Context, repoID RepositoryID, name string) (
 		return err
 	})
 	return ref, err
+}
+
+func (e *Engine) CommitToRef(ctx context.Context, repoID RepositoryID, refName string, changes []CommitChange, message string) (Commit, Ref, error) {
+	if repoID == "" {
+		return Commit{}, Ref{}, fmt.Errorf("%w: repository id is required", ErrValidation)
+	}
+
+	refName = strings.TrimSpace(refName)
+	if refName == "" {
+		return Commit{}, Ref{}, fmt.Errorf("%w: ref name is required", ErrValidation)
+	}
+
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return Commit{}, Ref{}, fmt.Errorf("%w: commit message is required", ErrValidation)
+	}
+
+	normalized, err := normalizeCommitChanges(changes)
+	if err != nil {
+		return Commit{}, Ref{}, err
+	}
+
+	now := e.now().UTC()
+	var commit Commit
+	var ref Ref
+
+	err = e.store.WithTx(ctx, func(tx Tx) error {
+		if _, err := tx.GetRepository(ctx, repoID); err != nil {
+			return err
+		}
+
+		proposedSnapshot := make(map[string]string, len(normalized))
+		for _, change := range normalized {
+			proposedSnapshot[change.Path] = HashObjectContent(change.Data)
+		}
+
+		currentRef, err := tx.GetRef(ctx, repoID, refName)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return err
+		}
+		if err == nil {
+			currentCommit, err := tx.GetCommit(ctx, currentRef.CommitID)
+			if err != nil {
+				return err
+			}
+			currentSnapshot, err := snapshotObjects(ctx, tx, currentCommit.ObjectIDs)
+			if err != nil {
+				return err
+			}
+			if sameSnapshotMap(currentSnapshot, proposedSnapshot) {
+				return fmt.Errorf("%w: ref %q already points to the same content", ErrNoChanges, refName)
+			}
+		}
+
+		objectIDs := make([]ObjectID, 0, len(normalized))
+		for _, change := range normalized {
+			objectID, err := NewObjectID()
+			if err != nil {
+				return err
+			}
+
+			obj := Object{
+				ID:           objectID,
+				RepositoryID: repoID,
+				Path:         change.Path,
+				Data:         append([]byte(nil), change.Data...),
+				ContentHash:  proposedSnapshot[change.Path],
+				CreatedAt:    now,
+			}
+			if err := tx.CreateObject(ctx, obj); err != nil {
+				return err
+			}
+			objectIDs = append(objectIDs, objectID)
+		}
+
+		commitID, err := NewCommitID()
+		if err != nil {
+			return err
+		}
+
+		commit = Commit{
+			ID:           commitID,
+			RepositoryID: repoID,
+			ObjectIDs:    objectIDs,
+			Message:      message,
+			CreatedAt:    now,
+		}
+		if err := tx.CreateCommit(ctx, commit); err != nil {
+			return err
+		}
+
+		ref = Ref{
+			RepositoryID: repoID,
+			Name:         refName,
+			CommitID:     commitID,
+			UpdatedAt:    now,
+		}
+		return tx.SetRef(ctx, ref)
+	})
+	if err != nil {
+		return Commit{}, Ref{}, err
+	}
+
+	return commit, ref, nil
+}
+
+func sameSnapshot(ctx context.Context, tx Tx, a Commit, b Commit) (bool, error) {
+	aObjects, err := snapshotObjects(ctx, tx, a.ObjectIDs)
+	if err != nil {
+		return false, err
+	}
+	bObjects, err := snapshotObjects(ctx, tx, b.ObjectIDs)
+	if err != nil {
+		return false, err
+	}
+
+	if len(aObjects) != len(bObjects) {
+		return false, nil
+	}
+
+	return sameSnapshotMap(aObjects, bObjects), nil
+}
+
+func sameSnapshotMap(aObjects map[string]string, bObjects map[string]string) bool {
+	if len(aObjects) != len(bObjects) {
+		return false
+	}
+
+	for path, aHash := range aObjects {
+		bHash, ok := bObjects[path]
+		if !ok {
+			return false
+		}
+		if aHash != bHash {
+			return false
+		}
+	}
+
+	return true
+}
+
+func snapshotObjects(ctx context.Context, tx Tx, objectIDs []ObjectID) (map[string]string, error) {
+	objects := make(map[string]string, len(objectIDs))
+	for _, objectID := range objectIDs {
+		obj, err := tx.GetObjectSummary(ctx, objectID)
+		if err != nil {
+			return nil, err
+		}
+		objects[obj.Path] = obj.ContentHash
+	}
+	return objects, nil
+}
+
+func normalizeCommitChanges(changes []CommitChange) ([]CommitChange, error) {
+	if len(changes) == 0 {
+		return nil, fmt.Errorf("%w: at least one change is required", ErrValidation)
+	}
+
+	seen := make(map[string]struct{}, len(changes))
+	normalized := make([]CommitChange, 0, len(changes))
+	for _, change := range changes {
+		path := strings.TrimSpace(change.Path)
+		if path == "" {
+			return nil, fmt.Errorf("%w: change path is required", ErrValidation)
+		}
+		if _, ok := seen[path]; ok {
+			return nil, fmt.Errorf("%w: duplicate change path %q", ErrValidation, path)
+		}
+		seen[path] = struct{}{}
+		normalized = append(normalized, CommitChange{
+			Path: path,
+			Data: append([]byte(nil), change.Data...),
+		})
+	}
+
+	return normalized, nil
 }

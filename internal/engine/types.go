@@ -17,7 +17,15 @@ type Object struct {
 	RepositoryID RepositoryID
 	Path         string
 	Data         []byte
+	ContentHash  string
 	CreatedAt    time.Time
+}
+
+type ObjectSummary struct {
+	ID           ObjectID
+	RepositoryID RepositoryID
+	Path         string
+	ContentHash  string
 }
 
 type CommitID string
@@ -35,4 +43,9 @@ type Ref struct {
 	Name         string
 	CommitID     CommitID
 	UpdatedAt    time.Time
+}
+
+type CommitChange struct {
+	Path string
+	Data []byte
 }

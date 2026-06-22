@@ -12,6 +12,11 @@ func HashRepository(name string) RepositoryID {
 	return RepositoryID(hex.EncodeToString(sum[:]))
 }
 
+func HashObjectContent(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
 func NewObjectID() (ObjectID, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {

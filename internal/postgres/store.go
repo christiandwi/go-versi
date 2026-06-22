@@ -77,10 +77,10 @@ func (tx *storeTx) GetRepository(ctx context.Context, id engine.RepositoryID) (e
 
 func (tx *storeTx) CreateObject(ctx context.Context, obj engine.Object) error {
 	result, err := tx.tx.ExecContext(ctx, `
-		INSERT INTO objects (id, repository_id, path, data, created_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO objects (id, repository_id, path, data, content_hash, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (id) DO NOTHING
-	`, obj.ID, obj.RepositoryID, obj.Path, obj.Data, obj.CreatedAt)
+	`, obj.ID, obj.RepositoryID, obj.Path, obj.Data, obj.ContentHash, obj.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("create object: %w", err)
 	}
@@ -97,15 +97,31 @@ func (tx *storeTx) CreateObject(ctx context.Context, obj engine.Object) error {
 func (tx *storeTx) GetObject(ctx context.Context, id engine.ObjectID) (engine.Object, error) {
 	var obj engine.Object
 	err := tx.tx.QueryRowContext(ctx, `
-		SELECT id, repository_id, path, data, created_at
+		SELECT id, repository_id, path, data, COALESCE(content_hash, ''), created_at
 		FROM objects
 		WHERE id = $1
-	`, id).Scan(&obj.ID, &obj.RepositoryID, &obj.Path, &obj.Data, &obj.CreatedAt)
+	`, id).Scan(&obj.ID, &obj.RepositoryID, &obj.Path, &obj.Data, &obj.ContentHash, &obj.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return engine.Object{}, fmt.Errorf("%w: object %q", engine.ErrNotFound, id)
 	}
 	if err != nil {
 		return engine.Object{}, fmt.Errorf("get object: %w", err)
+	}
+	return obj, nil
+}
+
+func (tx *storeTx) GetObjectSummary(ctx context.Context, id engine.ObjectID) (engine.ObjectSummary, error) {
+	var obj engine.ObjectSummary
+	err := tx.tx.QueryRowContext(ctx, `
+		SELECT id, repository_id, path, COALESCE(content_hash, '')
+		FROM objects
+		WHERE id = $1
+	`, id).Scan(&obj.ID, &obj.RepositoryID, &obj.Path, &obj.ContentHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return engine.ObjectSummary{}, fmt.Errorf("%w: object %q", engine.ErrNotFound, id)
+	}
+	if err != nil {
+		return engine.ObjectSummary{}, fmt.Errorf("get object summary: %w", err)
 	}
 	return obj, nil
 }

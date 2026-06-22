@@ -101,6 +101,9 @@ func TestCreateObject(t *testing.T) {
 	if string(obj.Data) != "hello" {
 		t.Fatalf("object data = %q, want %q", obj.Data, "hello")
 	}
+	if obj.ContentHash != engine.HashObjectContent([]byte("hello")) {
+		t.Fatalf("object content hash = %q, want %q", obj.ContentHash, engine.HashObjectContent([]byte("hello")))
+	}
 }
 
 func TestGetObject(t *testing.T) {
@@ -132,6 +135,9 @@ func TestGetObject(t *testing.T) {
 	}
 	if string(found.Data) != string(created.Data) {
 		t.Fatalf("object data = %q, want %q", found.Data, created.Data)
+	}
+	if found.ContentHash != created.ContentHash {
+		t.Fatalf("object content hash = %q, want %q", found.ContentHash, created.ContentHash)
 	}
 }
 
@@ -345,6 +351,69 @@ func TestSetRefMovesExistingRef(t *testing.T) {
 	}
 }
 
+func TestSetRefRejectsNoChanges(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, first := createRepositoryObjectCommit(t, ctx, app)
+	if _, err := app.SetRef(ctx, repo.ID, "main", first.ID); err != nil {
+		t.Fatalf("SetRef(first) error = %v", err)
+	}
+
+	sameObject, err := app.CreateObject(ctx, repo.ID, "README.md", []byte("hello"))
+	if err != nil {
+		t.Fatalf("CreateObject() error = %v", err)
+	}
+	sameCommit, err := app.CreateCommit(ctx, repo.ID, []engine.ObjectID{sameObject.ID}, "same content")
+	if err != nil {
+		t.Fatalf("CreateCommit() error = %v", err)
+	}
+
+	_, err = app.SetRef(ctx, repo.ID, "main", sameCommit.ID)
+	if !errors.Is(err, engine.ErrNoChanges) {
+		t.Fatalf("SetRef(sameCommit) error = %v, want ErrNoChanges", err)
+	}
+
+	found, err := app.GetRef(ctx, repo.ID, "main")
+	if err != nil {
+		t.Fatalf("GetRef() error = %v", err)
+	}
+	if found.CommitID != first.ID {
+		t.Fatalf("commit id = %q, want %q", found.CommitID, first.ID)
+	}
+}
+
+func TestSetRefAllowsChangedContent(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, first := createRepositoryObjectCommit(t, ctx, app)
+	if _, err := app.SetRef(ctx, repo.ID, "main", first.ID); err != nil {
+		t.Fatalf("SetRef(first) error = %v", err)
+	}
+
+	changedObject, err := app.CreateObject(ctx, repo.ID, "README.md", []byte("hello v2"))
+	if err != nil {
+		t.Fatalf("CreateObject() error = %v", err)
+	}
+	changedCommit, err := app.CreateCommit(ctx, repo.ID, []engine.ObjectID{changedObject.ID}, "changed content")
+	if err != nil {
+		t.Fatalf("CreateCommit() error = %v", err)
+	}
+
+	if _, err := app.SetRef(ctx, repo.ID, "main", changedCommit.ID); err != nil {
+		t.Fatalf("SetRef(changedCommit) error = %v", err)
+	}
+
+	found, err := app.GetRef(ctx, repo.ID, "main")
+	if err != nil {
+		t.Fatalf("GetRef() error = %v", err)
+	}
+	if found.CommitID != changedCommit.ID {
+		t.Fatalf("commit id = %q, want %q", found.CommitID, changedCommit.ID)
+	}
+}
+
 func TestSetRefRejectsCommitFromDifferentRepository(t *testing.T) {
 	ctx := context.Background()
 	app := newTestEngine(t)
@@ -361,6 +430,108 @@ func TestSetRefRejectsCommitFromDifferentRepository(t *testing.T) {
 	}
 	if repoA.ID == repoB.ID {
 		t.Fatal("test setup created duplicate repositories")
+	}
+}
+
+func TestCommitToRefCreatesCommitAndRef(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+
+	commit, ref, err := app.CommitToRef(ctx, repo.ID, "main", []engine.CommitChange{
+		{Path: "README.md", Data: []byte("hello")},
+	}, "initial commit")
+	if err != nil {
+		t.Fatalf("CommitToRef() error = %v", err)
+	}
+
+	if commit.ID == "" {
+		t.Fatal("commit id is empty")
+	}
+	if ref.CommitID != commit.ID {
+		t.Fatalf("ref commit id = %q, want %q", ref.CommitID, commit.ID)
+	}
+
+	found, err := app.GetRef(ctx, repo.ID, "main")
+	if err != nil {
+		t.Fatalf("GetRef() error = %v", err)
+	}
+	if found.CommitID != commit.ID {
+		t.Fatalf("found ref commit id = %q, want %q", found.CommitID, commit.ID)
+	}
+}
+
+func TestCommitToRefRejectsNoChangesBeforeCreatingCommit(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+
+	first, _, err := app.CommitToRef(ctx, repo.ID, "main", []engine.CommitChange{
+		{Path: "README.md", Data: []byte("hello")},
+	}, "initial commit")
+	if err != nil {
+		t.Fatalf("CommitToRef(first) error = %v", err)
+	}
+
+	second, _, err := app.CommitToRef(ctx, repo.ID, "main", []engine.CommitChange{
+		{Path: "README.md", Data: []byte("hello")},
+	}, "same content")
+	if !errors.Is(err, engine.ErrNoChanges) {
+		t.Fatalf("CommitToRef(second) error = %v, want ErrNoChanges", err)
+	}
+	if second.ID != "" {
+		t.Fatalf("second commit id = %q, want empty", second.ID)
+	}
+
+	found, err := app.GetRef(ctx, repo.ID, "main")
+	if err != nil {
+		t.Fatalf("GetRef() error = %v", err)
+	}
+	if found.CommitID != first.ID {
+		t.Fatalf("ref commit id = %q, want %q", found.CommitID, first.ID)
+	}
+}
+
+func TestCommitToRefAllowsChangedContent(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+
+	first, _, err := app.CommitToRef(ctx, repo.ID, "main", []engine.CommitChange{
+		{Path: "README.md", Data: []byte("hello")},
+	}, "initial commit")
+	if err != nil {
+		t.Fatalf("CommitToRef(first) error = %v", err)
+	}
+
+	second, _, err := app.CommitToRef(ctx, repo.ID, "main", []engine.CommitChange{
+		{Path: "README.md", Data: []byte("hello v2")},
+	}, "second commit")
+	if err != nil {
+		t.Fatalf("CommitToRef(second) error = %v", err)
+	}
+	if second.ID == "" || second.ID == first.ID {
+		t.Fatalf("second commit id = %q, first = %q", second.ID, first.ID)
+	}
+
+	found, err := app.GetRef(ctx, repo.ID, "main")
+	if err != nil {
+		t.Fatalf("GetRef() error = %v", err)
+	}
+	if found.CommitID != second.ID {
+		t.Fatalf("ref commit id = %q, want %q", found.CommitID, second.ID)
 	}
 }
 
