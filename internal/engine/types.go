@@ -9,3 +9,13 @@ type Repository struct {
 	Name      string
 	CreatedAt time.Time
 }
+
+type ObjectID string
+
+type Object struct {
+	ID           ObjectID
+	RepositoryID RepositoryID
+	Path         string
+	Data         []byte
+	CreatedAt    time.Time
+}

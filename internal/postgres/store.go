@@ -74,3 +74,38 @@ func (tx *storeTx) GetRepository(ctx context.Context, id engine.RepositoryID) (e
 	}
 	return repo, nil
 }
+
+func (tx *storeTx) CreateObject(ctx context.Context, obj engine.Object) error {
+	result, err := tx.tx.ExecContext(ctx, `
+		INSERT INTO objects (id, repository_id, path, data, created_at)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (id) DO NOTHING
+	`, obj.ID, obj.RepositoryID, obj.Path, obj.Data, obj.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("create object: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("create object rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("%w: object %q already exists", engine.ErrConflict, obj.ID)
+	}
+	return nil
+}
+
+func (tx *storeTx) GetObject(ctx context.Context, id engine.ObjectID) (engine.Object, error) {
+	var obj engine.Object
+	err := tx.tx.QueryRowContext(ctx, `
+		SELECT id, repository_id, path, data, created_at
+		FROM objects
+		WHERE id = $1
+	`, id).Scan(&obj.ID, &obj.RepositoryID, &obj.Path, &obj.Data, &obj.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return engine.Object{}, fmt.Errorf("%w: object %q", engine.ErrNotFound, id)
+	}
+	if err != nil {
+		return engine.Object{}, fmt.Errorf("get object: %w", err)
+	}
+	return obj, nil
+}

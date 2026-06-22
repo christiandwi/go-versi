@@ -1,4 +1,4 @@
-CREATE TABLE repositories (
+CREATE TABLE IF NOT EXISTS repositories (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     created_at TIMESTAMPTZ NOT NULL

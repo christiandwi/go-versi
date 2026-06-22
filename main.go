@@ -50,4 +50,18 @@ func main() {
 
 	fmt.Println("repository:", repo.ID, repo.Name)
 	fmt.Println("found repository:", found.ID, found.Name)
+
+	obj, err := app.CreateObject(ctx, repo.ID, "README.md", []byte("hello"))
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("created object:", obj.ID, obj.Path)
+
+	foundObj, err := app.GetObject(ctx, obj.ID)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("found object:", foundObj.ID, foundObj.Path)
 }

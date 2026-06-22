@@ -75,6 +75,91 @@ func TestCreateRepositoryRequiresName(t *testing.T) {
 	}
 }
 
+func TestCreateObject(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+
+	obj, err := app.CreateObject(ctx, repo.ID, "README.md", []byte("hello"))
+	if err != nil {
+		t.Fatalf("CreateObject() error = %v", err)
+	}
+
+	if obj.ID == "" {
+		t.Fatal("object id is empty")
+	}
+	if obj.RepositoryID != repo.ID {
+		t.Fatalf("repository id = %q, want %q", obj.RepositoryID, repo.ID)
+	}
+	if obj.Path != "README.md" {
+		t.Fatalf("object path = %q, want %q", obj.Path, "README.md")
+	}
+	if string(obj.Data) != "hello" {
+		t.Fatalf("object data = %q, want %q", obj.Data, "hello")
+	}
+}
+
+func TestGetObject(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+	created, err := app.CreateObject(ctx, repo.ID, "README.md", []byte("hello"))
+	if err != nil {
+		t.Fatalf("CreateObject() error = %v", err)
+	}
+
+	found, err := app.GetObject(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetObject() error = %v", err)
+	}
+
+	if found.ID != created.ID {
+		t.Fatalf("object id = %q, want %q", found.ID, created.ID)
+	}
+	if found.RepositoryID != repo.ID {
+		t.Fatalf("repository id = %q, want %q", found.RepositoryID, repo.ID)
+	}
+	if found.Path != created.Path {
+		t.Fatalf("object path = %q, want %q", found.Path, created.Path)
+	}
+	if string(found.Data) != string(created.Data) {
+		t.Fatalf("object data = %q, want %q", found.Data, created.Data)
+	}
+}
+
+func TestCreateObjectRequiresRepository(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	_, err := app.CreateObject(ctx, "missing", "README.md", []byte("hello"))
+	if !errors.Is(err, engine.ErrNotFound) {
+		t.Fatalf("CreateObject() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestCreateObjectRequiresPath(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+
+	_, err = app.CreateObject(ctx, repo.ID, " ", []byte("hello"))
+	if !errors.Is(err, engine.ErrValidation) {
+		t.Fatalf("CreateObject() error = %v, want ErrValidation", err)
+	}
+}
+
 func newTestEngine(t *testing.T) *engine.Engine {
 	t.Helper()
 

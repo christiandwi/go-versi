@@ -2,10 +2,12 @@
 
 `go-versi` is a small Go foundation for a repository engine.
 
-For now, it only does two things:
+For now, it does four things:
 
 - create a repository
 - get a repository by ID
+- create an object inside a repository
+- get an object by ID
 
 This keeps the first step easy to understand.
 
@@ -37,8 +39,9 @@ Run the demo:
 go run .
 ```
 
-The demo creates `repo-1`, then reads it back from PostgreSQL. If `repo-1`
-already exists, it reads the existing repository instead.
+The demo creates `repo-1`, reads it back from PostgreSQL, creates a
+`README.md` object, then reads that object back too. If `repo-1` already
+exists, it reads the existing repository instead.
 
 ## Docker
 
@@ -48,13 +51,7 @@ Run the test suite in Docker:
 docker compose run --rm app
 ```
 
-The database URL inside Compose is:
-
-```text
-postgres://goversi:goversi@postgres:5432/goversi?sslmode=disable
-```
-
-From your local machine, use:
+The database URL is:
 
 ```text
 postgres://goversi:goversi@localhost:5439/goversi?sslmode=disable
