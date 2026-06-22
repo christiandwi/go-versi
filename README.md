@@ -9,13 +9,16 @@ Current features:
 - create and get an object inside a repository
 - store a SHA-256 content hash for each object
 - create and get a commit
+- link each new commit to its previous commit
 - set and get a ref, such as `main`
 - avoid creating a new object, commit, or ref update when the file paths and content did not change
 
 Current flow:
 
 ```text
-repository -> object -> commit -> ref(main)
+repository -> object -> commit <- ref(main)
+                         |
+                      parent
 ```
 
 ## Verify
@@ -52,6 +55,7 @@ The demo:
 - checks whether `README.md` changed compared to `main`
 - creates a `README.md` object only when content changed
 - creates a commit only when content changed
+- links the new commit to the previous `main` commit
 - sets `main` only when content changed
 - reads the current ref and commit back from PostgreSQL
 

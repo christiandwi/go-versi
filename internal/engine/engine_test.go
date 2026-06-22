@@ -452,6 +452,9 @@ func TestCommitToRefCreatesCommitAndRef(t *testing.T) {
 	if commit.ID == "" {
 		t.Fatal("commit id is empty")
 	}
+	if commit.ParentID != nil {
+		t.Fatalf("parent id = %q, want nil", *commit.ParentID)
+	}
 	if ref.CommitID != commit.ID {
 		t.Fatalf("ref commit id = %q, want %q", ref.CommitID, commit.ID)
 	}
@@ -525,6 +528,9 @@ func TestCommitToRefAllowsChangedContent(t *testing.T) {
 	if second.ID == "" || second.ID == first.ID {
 		t.Fatalf("second commit id = %q, first = %q", second.ID, first.ID)
 	}
+	if second.ParentID == nil || *second.ParentID != first.ID {
+		t.Fatalf("second parent id = %v, want %q", second.ParentID, first.ID)
+	}
 
 	found, err := app.GetRef(ctx, repo.ID, "main")
 	if err != nil {
@@ -532,6 +538,14 @@ func TestCommitToRefAllowsChangedContent(t *testing.T) {
 	}
 	if found.CommitID != second.ID {
 		t.Fatalf("ref commit id = %q, want %q", found.CommitID, second.ID)
+	}
+
+	foundCommit, err := app.GetCommit(ctx, second.ID)
+	if err != nil {
+		t.Fatalf("GetCommit(second) error = %v", err)
+	}
+	if foundCommit.ParentID == nil || *foundCommit.ParentID != first.ID {
+		t.Fatalf("found parent id = %v, want %q", foundCommit.ParentID, first.ID)
 	}
 }
 

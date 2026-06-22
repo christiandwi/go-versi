@@ -127,11 +127,16 @@ func (tx *storeTx) GetObjectSummary(ctx context.Context, id engine.ObjectID) (en
 }
 
 func (tx *storeTx) CreateCommit(ctx context.Context, commit engine.Commit) error {
+	var parentID any
+	if commit.ParentID != nil {
+		parentID = string(*commit.ParentID)
+	}
+
 	result, err := tx.tx.ExecContext(ctx, `
-		INSERT INTO commits (id, repository_id, message, author, created_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO commits (id, repository_id, parent_id, message, author, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (id) DO NOTHING
-	`, commit.ID, commit.RepositoryID, commit.Message, "", commit.CreatedAt)
+	`, commit.ID, commit.RepositoryID, parentID, commit.Message, "", commit.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("create commit: %w", err)
 	}
@@ -158,16 +163,21 @@ func (tx *storeTx) CreateCommit(ctx context.Context, commit engine.Commit) error
 
 func (tx *storeTx) GetCommit(ctx context.Context, id engine.CommitID) (engine.Commit, error) {
 	var commit engine.Commit
+	var parentID sql.NullString
 	err := tx.tx.QueryRowContext(ctx, `
-		SELECT id, repository_id, message, created_at
+		SELECT id, repository_id, parent_id, message, created_at
 		FROM commits
 		WHERE id = $1
-	`, id).Scan(&commit.ID, &commit.RepositoryID, &commit.Message, &commit.CreatedAt)
+	`, id).Scan(&commit.ID, &commit.RepositoryID, &parentID, &commit.Message, &commit.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return engine.Commit{}, fmt.Errorf("%w: commit %q", engine.ErrNotFound, id)
 	}
 	if err != nil {
 		return engine.Commit{}, fmt.Errorf("get commit: %w", err)
+	}
+	if parentID.Valid {
+		value := engine.CommitID(parentID.String)
+		commit.ParentID = &value
 	}
 
 	rows, err := tx.tx.QueryContext(ctx, `

@@ -33,6 +33,7 @@ type CommitID string
 type Commit struct {
 	ID           CommitID
 	RepositoryID RepositoryID
+	ParentID     *CommitID
 	ObjectIDs    []ObjectID
 	Message      string
 	CreatedAt    time.Time

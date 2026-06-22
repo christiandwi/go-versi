@@ -292,7 +292,11 @@ func (e *Engine) CommitToRef(ctx context.Context, repoID RepositoryID, refName s
 		if err != nil && !errors.Is(err, ErrNotFound) {
 			return err
 		}
+		var parentID *CommitID
 		if err == nil {
+			parentCommitID := currentRef.CommitID
+			parentID = &parentCommitID
+
 			currentCommit, err := tx.GetCommit(ctx, currentRef.CommitID)
 			if err != nil {
 				return err
@@ -335,6 +339,7 @@ func (e *Engine) CommitToRef(ctx context.Context, repoID RepositoryID, refName s
 		commit = Commit{
 			ID:           commitID,
 			RepositoryID: repoID,
+			ParentID:     parentID,
 			ObjectIDs:    objectIDs,
 			Message:      message,
 			CreatedAt:    now,
