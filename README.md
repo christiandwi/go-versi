@@ -8,6 +8,8 @@ For now, it does four things:
 - get a repository by ID
 - create an object inside a repository
 - get an object by ID
+- create a commit
+- get a commit by ID
 
 This keeps the first step easy to understand.
 
@@ -40,8 +42,8 @@ go run .
 ```
 
 The demo creates `repo-1`, reads it back from PostgreSQL, creates a
-`README.md` object, then reads that object back too. If `repo-1` already
-exists, it reads the existing repository instead.
+`README.md` object, then reads that object back too, then commit and get the commit.
+If `repo-1` already exists, it reads the existing repository instead.
 
 ## Docker
 

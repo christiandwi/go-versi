@@ -16,6 +16,8 @@ type Tx interface {
 	GetRepository(ctx context.Context, id RepositoryID) (Repository, error)
 	CreateObject(ctx context.Context, obj Object) error
 	GetObject(ctx context.Context, id ObjectID) (Object, error)
+	CreateCommit(ctx context.Context, commit Commit) error
+	GetCommit(ctx context.Context, id CommitID) (Commit, error)
 }
 
 type Engine struct {
@@ -106,4 +108,64 @@ func (e *Engine) GetObject(ctx context.Context, id ObjectID) (Object, error) {
 		return err
 	})
 	return obj, err
+}
+
+func (e *Engine) CreateCommit(ctx context.Context, repoID RepositoryID, objectIDs []ObjectID, message string) (Commit, error) {
+	if repoID == "" {
+		return Commit{}, fmt.Errorf("%w: repository id is required", ErrValidation)
+	}
+	if len(objectIDs) == 0 {
+		return Commit{}, fmt.Errorf("%w: at least one object is required", ErrValidation)
+	}
+
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return Commit{}, fmt.Errorf("%w: commit message is required", ErrValidation)
+	}
+
+	commitID, err := NewCommitID()
+	if err != nil {
+		return Commit{}, err
+	}
+
+	commit := Commit{
+		ID:           commitID,
+		RepositoryID: repoID,
+		ObjectIDs:    append([]ObjectID(nil), objectIDs...),
+		Message:      message,
+		CreatedAt:    e.now().UTC(),
+	}
+
+	err = e.store.WithTx(ctx, func(tx Tx) error {
+		if _, err := tx.GetRepository(ctx, repoID); err != nil {
+			return err
+		}
+
+		for _, objectID := range objectIDs {
+			obj, err := tx.GetObject(ctx, objectID)
+			if err != nil {
+				return err
+			}
+			if obj.RepositoryID != repoID {
+				return fmt.Errorf("%w: object %q belongs to repository %q", ErrValidation, objectID, obj.RepositoryID)
+			}
+		}
+
+		return tx.CreateCommit(ctx, commit)
+	})
+	if err != nil {
+		return Commit{}, err
+	}
+
+	return commit, nil
+}
+
+func (e *Engine) GetCommit(ctx context.Context, id CommitID) (Commit, error) {
+	var commit Commit
+	err := e.store.WithTx(ctx, func(tx Tx) error {
+		var err error
+		commit, err = tx.GetCommit(ctx, id)
+		return err
+	})
+	return commit, err
 }

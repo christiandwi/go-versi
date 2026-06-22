@@ -19,3 +19,13 @@ type Object struct {
 	Data         []byte
 	CreatedAt    time.Time
 }
+
+type CommitID string
+
+type Commit struct {
+	ID           CommitID
+	RepositoryID RepositoryID
+	ObjectIDs    []ObjectID
+	Message      string
+	CreatedAt    time.Time
+}

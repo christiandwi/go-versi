@@ -19,3 +19,11 @@ func NewObjectID() (ObjectID, error) {
 	}
 	return ObjectID(hex.EncodeToString(b[:])), nil
 }
+
+func NewCommitID() (CommitID, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("new commit id: %w", err)
+	}
+	return CommitID(hex.EncodeToString(b[:])), nil
+}

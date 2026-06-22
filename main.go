@@ -64,4 +64,18 @@ func main() {
 	}
 
 	fmt.Println("found object:", foundObj.ID, foundObj.Path)
+
+	commit, err := app.CreateCommit(ctx, repo.ID, []engine.ObjectID{obj.ID}, "initial commit")
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("created commit:", commit.ID, commit.Message)
+
+	foundCommit, err := app.GetCommit(ctx, commit.ID)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("found commit:", foundCommit.ID, foundCommit.Message)
 }

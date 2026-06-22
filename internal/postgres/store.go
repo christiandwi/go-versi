@@ -109,3 +109,72 @@ func (tx *storeTx) GetObject(ctx context.Context, id engine.ObjectID) (engine.Ob
 	}
 	return obj, nil
 }
+
+func (tx *storeTx) CreateCommit(ctx context.Context, commit engine.Commit) error {
+	result, err := tx.tx.ExecContext(ctx, `
+		INSERT INTO commits (id, repository_id, message, author, created_at)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (id) DO NOTHING
+	`, commit.ID, commit.RepositoryID, commit.Message, "", commit.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("create commit: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("create commit rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("%w: commit %q already exists", engine.ErrConflict, commit.ID)
+	}
+
+	for i, objectID := range commit.ObjectIDs {
+		_, err := tx.tx.ExecContext(ctx, `
+			INSERT INTO commit_objects (commit_id, object_id, position)
+			VALUES ($1, $2, $3)
+		`, commit.ID, objectID, i)
+		if err != nil {
+			return fmt.Errorf("create commit object: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (tx *storeTx) GetCommit(ctx context.Context, id engine.CommitID) (engine.Commit, error) {
+	var commit engine.Commit
+	err := tx.tx.QueryRowContext(ctx, `
+		SELECT id, repository_id, message, created_at
+		FROM commits
+		WHERE id = $1
+	`, id).Scan(&commit.ID, &commit.RepositoryID, &commit.Message, &commit.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return engine.Commit{}, fmt.Errorf("%w: commit %q", engine.ErrNotFound, id)
+	}
+	if err != nil {
+		return engine.Commit{}, fmt.Errorf("get commit: %w", err)
+	}
+
+	rows, err := tx.tx.QueryContext(ctx, `
+		SELECT object_id
+		FROM commit_objects
+		WHERE commit_id = $1
+		ORDER BY position ASC
+	`, id)
+	if err != nil {
+		return engine.Commit{}, fmt.Errorf("get commit objects: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var objectID engine.ObjectID
+		if err := rows.Scan(&objectID); err != nil {
+			return engine.Commit{}, fmt.Errorf("scan commit object: %w", err)
+		}
+		commit.ObjectIDs = append(commit.ObjectIDs, objectID)
+	}
+	if err := rows.Err(); err != nil {
+		return engine.Commit{}, fmt.Errorf("iterate commit objects: %w", err)
+	}
+
+	return commit, nil
+}

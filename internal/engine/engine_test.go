@@ -160,6 +160,112 @@ func TestCreateObjectRequiresPath(t *testing.T) {
 	}
 }
 
+func TestCreateCommit(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+	obj, err := app.CreateObject(ctx, repo.ID, "README.md", []byte("hello"))
+	if err != nil {
+		t.Fatalf("CreateObject() error = %v", err)
+	}
+
+	commit, err := app.CreateCommit(ctx, repo.ID, []engine.ObjectID{obj.ID}, "initial commit")
+	if err != nil {
+		t.Fatalf("CreateCommit() error = %v", err)
+	}
+
+	if commit.ID == "" {
+		t.Fatal("commit id is empty")
+	}
+	if commit.RepositoryID != repo.ID {
+		t.Fatalf("repository id = %q, want %q", commit.RepositoryID, repo.ID)
+	}
+	if commit.Message != "initial commit" {
+		t.Fatalf("message = %q, want %q", commit.Message, "initial commit")
+	}
+	if len(commit.ObjectIDs) != 1 || commit.ObjectIDs[0] != obj.ID {
+		t.Fatalf("object ids = %v, want [%s]", commit.ObjectIDs, obj.ID)
+	}
+}
+
+func TestGetCommit(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+	obj, err := app.CreateObject(ctx, repo.ID, "README.md", []byte("hello"))
+	if err != nil {
+		t.Fatalf("CreateObject() error = %v", err)
+	}
+	created, err := app.CreateCommit(ctx, repo.ID, []engine.ObjectID{obj.ID}, "initial commit")
+	if err != nil {
+		t.Fatalf("CreateCommit() error = %v", err)
+	}
+
+	found, err := app.GetCommit(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetCommit() error = %v", err)
+	}
+
+	if found.ID != created.ID {
+		t.Fatalf("commit id = %q, want %q", found.ID, created.ID)
+	}
+	if found.RepositoryID != repo.ID {
+		t.Fatalf("repository id = %q, want %q", found.RepositoryID, repo.ID)
+	}
+	if found.Message != created.Message {
+		t.Fatalf("message = %q, want %q", found.Message, created.Message)
+	}
+	if len(found.ObjectIDs) != 1 || found.ObjectIDs[0] != obj.ID {
+		t.Fatalf("object ids = %v, want [%s]", found.ObjectIDs, obj.ID)
+	}
+}
+
+func TestCreateCommitRequiresObject(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+
+	_, err = app.CreateCommit(ctx, repo.ID, nil, "initial commit")
+	if !errors.Is(err, engine.ErrValidation) {
+		t.Fatalf("CreateCommit() error = %v, want ErrValidation", err)
+	}
+}
+
+func TestCreateCommitRejectsObjectFromDifferentRepository(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repoA, err := app.CreateRepository(ctx, uniqueRepositoryName(t)+"-a")
+	if err != nil {
+		t.Fatalf("CreateRepository(repoA) error = %v", err)
+	}
+	repoB, err := app.CreateRepository(ctx, uniqueRepositoryName(t)+"-b")
+	if err != nil {
+		t.Fatalf("CreateRepository(repoB) error = %v", err)
+	}
+	obj, err := app.CreateObject(ctx, repoA.ID, "README.md", []byte("hello"))
+	if err != nil {
+		t.Fatalf("CreateObject() error = %v", err)
+	}
+
+	_, err = app.CreateCommit(ctx, repoB.ID, []engine.ObjectID{obj.ID}, "initial commit")
+	if !errors.Is(err, engine.ErrValidation) {
+		t.Fatalf("CreateCommit() error = %v, want ErrValidation", err)
+	}
+}
+
 func newTestEngine(t *testing.T) *engine.Engine {
 	t.Helper()
 
