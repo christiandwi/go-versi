@@ -549,6 +549,59 @@ func TestCommitToRefAllowsChangedContent(t *testing.T) {
 	}
 }
 
+func TestLogReturnsCommitsNewestToOldest(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+
+	first, _, err := app.CommitToRef(ctx, repo.ID, "main", []engine.CommitChange{
+		{Path: "README.md", Data: []byte("hello")},
+	}, "initial commit")
+	if err != nil {
+		t.Fatalf("CommitToRef(first) error = %v", err)
+	}
+	second, _, err := app.CommitToRef(ctx, repo.ID, "main", []engine.CommitChange{
+		{Path: "README.md", Data: []byte("hello v2")},
+	}, "second commit")
+	if err != nil {
+		t.Fatalf("CommitToRef(second) error = %v", err)
+	}
+
+	commits, err := app.Log(ctx, repo.ID, "main")
+	if err != nil {
+		t.Fatalf("Log() error = %v", err)
+	}
+
+	if len(commits) != 2 {
+		t.Fatalf("commits len = %d, want 2", len(commits))
+	}
+	if commits[0].ID != second.ID {
+		t.Fatalf("commits[0] = %q, want %q", commits[0].ID, second.ID)
+	}
+	if commits[1].ID != first.ID {
+		t.Fatalf("commits[1] = %q, want %q", commits[1].ID, first.ID)
+	}
+}
+
+func TestLogRequiresExistingRef(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+
+	_, err = app.Log(ctx, repo.ID, "main")
+	if !errors.Is(err, engine.ErrNotFound) {
+		t.Fatalf("Log() error = %v, want ErrNotFound", err)
+	}
+}
+
 func newTestEngine(t *testing.T) *engine.Engine {
 	t.Helper()
 

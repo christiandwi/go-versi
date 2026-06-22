@@ -254,6 +254,44 @@ func (e *Engine) GetRef(ctx context.Context, repoID RepositoryID, name string) (
 	return ref, err
 }
 
+func (e *Engine) Log(ctx context.Context, repoID RepositoryID, refName string) ([]Commit, error) {
+	if repoID == "" {
+		return nil, fmt.Errorf("%w: repository id is required", ErrValidation)
+	}
+
+	refName = strings.TrimSpace(refName)
+	if refName == "" {
+		return nil, fmt.Errorf("%w: ref name is required", ErrValidation)
+	}
+
+	var commits []Commit
+	err := e.store.WithTx(ctx, func(tx Tx) error {
+		ref, err := tx.GetRef(ctx, repoID, refName)
+		if err != nil {
+			return err
+		}
+
+		nextID := ref.CommitID
+		for {
+			commit, err := tx.GetCommit(ctx, nextID)
+			if err != nil {
+				return err
+			}
+			commits = append(commits, commit)
+
+			if commit.ParentID == nil {
+				return nil
+			}
+			nextID = *commit.ParentID
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return commits, nil
+}
+
 func (e *Engine) CommitToRef(ctx context.Context, repoID RepositoryID, refName string, changes []CommitChange, message string) (Commit, Ref, error) {
 	if repoID == "" {
 		return Commit{}, Ref{}, fmt.Errorf("%w: repository id is required", ErrValidation)
