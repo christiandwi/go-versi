@@ -602,6 +602,63 @@ func TestLogRequiresExistingRef(t *testing.T) {
 	}
 }
 
+func TestGetSnapshotReturnsObjectsFromCurrentRef(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+
+	if _, _, err := app.CommitToRef(ctx, repo.ID, "main", []engine.CommitChange{
+		{Path: "README.md", Data: []byte("hello")},
+	}, "initial commit"); err != nil {
+		t.Fatalf("CommitToRef(first) error = %v", err)
+	}
+	if _, _, err := app.CommitToRef(ctx, repo.ID, "main", []engine.CommitChange{
+		{Path: "README.md", Data: []byte("hello v2")},
+		{Path: "main.go", Data: []byte("package main")},
+	}, "second commit"); err != nil {
+		t.Fatalf("CommitToRef(second) error = %v", err)
+	}
+
+	objects, err := app.GetSnapshot(ctx, repo.ID, "main")
+	if err != nil {
+		t.Fatalf("GetSnapshot() error = %v", err)
+	}
+
+	if len(objects) != 2 {
+		t.Fatalf("objects len = %d, want 2", len(objects))
+	}
+
+	byPath := make(map[string]string, len(objects))
+	for _, obj := range objects {
+		byPath[obj.Path] = string(obj.Data)
+	}
+	if byPath["README.md"] != "hello v2" {
+		t.Fatalf("README.md = %q, want %q", byPath["README.md"], "hello v2")
+	}
+	if byPath["main.go"] != "package main" {
+		t.Fatalf("main.go = %q, want %q", byPath["main.go"], "package main")
+	}
+}
+
+func TestGetSnapshotRequiresExistingRef(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+
+	_, err = app.GetSnapshot(ctx, repo.ID, "main")
+	if !errors.Is(err, engine.ErrNotFound) {
+		t.Fatalf("GetSnapshot() error = %v, want ErrNotFound", err)
+	}
+}
+
 func newTestEngine(t *testing.T) *engine.Engine {
 	t.Helper()
 

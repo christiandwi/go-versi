@@ -12,6 +12,7 @@ Current features:
 - link each new commit to its previous commit
 - set and get a ref, such as `main`
 - list commit history from a ref
+- read the current snapshot from a ref
 - avoid creating a new object, commit, or ref update when the file paths and content did not change
 
 Current flow:
@@ -60,6 +61,7 @@ The demo:
 - sets `main` only when content changed
 - reads the current ref and commit back from PostgreSQL
 - prints commit history from newest to oldest
+- prints the current snapshot files
 
 If `main` already points to the same file paths and content, the demo prints
 `ref unchanged` without creating a new object or commit.

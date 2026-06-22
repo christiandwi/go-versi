@@ -54,9 +54,9 @@ func main() {
 	commit, ref, err := app.CommitToRef(ctx, repo.ID, "main", []engine.CommitChange{
 		{
 			Path: "README.md",
-			Data: []byte("hello test"),
+			Data: []byte("hello"),
 		},
-	}, "second commit")
+	}, "third commit")
 	if errors.Is(err, engine.ErrNoChanges) {
 		ref, err = app.GetRef(ctx, repo.ID, "main")
 		fmt.Println("ref unchanged:", ref.Name, ref.CommitID)
@@ -91,5 +91,15 @@ func main() {
 	fmt.Println("log:")
 	for _, commit := range commits {
 		fmt.Println("-", commit.ID, commit.Message)
+	}
+
+	objects, err := app.GetSnapshot(ctx, repo.ID, "main")
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("snapshot:")
+	for _, object := range objects {
+		fmt.Println("-", object.Path, string(object.Data))
 	}
 }

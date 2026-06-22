@@ -292,6 +292,49 @@ func (e *Engine) Log(ctx context.Context, repoID RepositoryID, refName string) (
 	return commits, nil
 }
 
+func (e *Engine) GetSnapshot(ctx context.Context, repoID RepositoryID, refName string) ([]Object, error) {
+	if repoID == "" {
+		return nil, fmt.Errorf("%w: repository id is required", ErrValidation)
+	}
+
+	refName = strings.TrimSpace(refName)
+	if refName == "" {
+		return nil, fmt.Errorf("%w: ref name is required", ErrValidation)
+	}
+
+	var objects []Object
+	err := e.store.WithTx(ctx, func(tx Tx) error {
+		ref, err := tx.GetRef(ctx, repoID, refName)
+		if err != nil {
+			return err
+		}
+
+		commit, err := tx.GetCommit(ctx, ref.CommitID)
+		if err != nil {
+			return err
+		}
+
+		objects = make([]Object, 0, len(commit.ObjectIDs))
+		for _, objectID := range commit.ObjectIDs {
+			obj, err := tx.GetObject(ctx, objectID)
+			if err != nil {
+				return err
+			}
+			if obj.RepositoryID != repoID {
+				return fmt.Errorf("%w: object %q belongs to repository %q", ErrValidation, objectID, obj.RepositoryID)
+			}
+			objects = append(objects, obj)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return objects, nil
+}
+
 func (e *Engine) CommitToRef(ctx context.Context, repoID RepositoryID, refName string, changes []CommitChange, message string) (Commit, Ref, error) {
 	if repoID == "" {
 		return Commit{}, Ref{}, fmt.Errorf("%w: repository id is required", ErrValidation)
