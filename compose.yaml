@@ -1,0 +1,39 @@
+services:
+  app:
+    build:
+      context: .
+      target: dev
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - go-build-cache:/tmp/go-build
+      - go-mod-cache:/go/pkg/mod
+    environment:
+      GOCACHE: /tmp/go-build
+      DATABASE_URL: postgres://goversi:goversi@postgres:5432/goversi?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["go", "test", "./..."]
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: goversi
+      POSTGRES_USER: goversi
+      POSTGRES_PASSWORD: goversi
+    ports:
+      - "5439:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U goversi -d goversi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  go-build-cache:
+  go-mod-cache:
+  postgres-data:
