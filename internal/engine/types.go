@@ -29,3 +29,10 @@ type Commit struct {
 	Message      string
 	CreatedAt    time.Time
 }
+
+type Ref struct {
+	RepositoryID RepositoryID
+	Name         string
+	CommitID     CommitID
+	UpdatedAt    time.Time
+}

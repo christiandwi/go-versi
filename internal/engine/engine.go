@@ -18,6 +18,8 @@ type Tx interface {
 	GetObject(ctx context.Context, id ObjectID) (Object, error)
 	CreateCommit(ctx context.Context, commit Commit) error
 	GetCommit(ctx context.Context, id CommitID) (Commit, error)
+	SetRef(ctx context.Context, ref Ref) error
+	GetRef(ctx context.Context, repoID RepositoryID, name string) (Ref, error)
 }
 
 type Engine struct {
@@ -168,4 +170,61 @@ func (e *Engine) GetCommit(ctx context.Context, id CommitID) (Commit, error) {
 		return err
 	})
 	return commit, err
+}
+
+func (e *Engine) SetRef(ctx context.Context, repoID RepositoryID, name string, commitID CommitID) (Ref, error) {
+	if repoID == "" {
+		return Ref{}, fmt.Errorf("%w: repository id is required", ErrValidation)
+	}
+	if commitID == "" {
+		return Ref{}, fmt.Errorf("%w: commit id is required", ErrValidation)
+	}
+
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Ref{}, fmt.Errorf("%w: ref name is required", ErrValidation)
+	}
+
+	ref := Ref{
+		RepositoryID: repoID,
+		Name:         name,
+		CommitID:     commitID,
+		UpdatedAt:    e.now().UTC(),
+	}
+
+	err := e.store.WithTx(ctx, func(tx Tx) error {
+		if _, err := tx.GetRepository(ctx, repoID); err != nil {
+			return err
+		}
+
+		commit, err := tx.GetCommit(ctx, commitID)
+		if err != nil {
+			return err
+		}
+		if commit.RepositoryID != repoID {
+			return fmt.Errorf("%w: commit %q belongs to repository %q", ErrValidation, commitID, commit.RepositoryID)
+		}
+
+		return tx.SetRef(ctx, ref)
+	})
+	if err != nil {
+		return Ref{}, err
+	}
+
+	return ref, nil
+}
+
+func (e *Engine) GetRef(ctx context.Context, repoID RepositoryID, name string) (Ref, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Ref{}, fmt.Errorf("%w: ref name is required", ErrValidation)
+	}
+
+	var ref Ref
+	err := e.store.WithTx(ctx, func(tx Tx) error {
+		var err error
+		ref, err = tx.GetRef(ctx, repoID, name)
+		return err
+	})
+	return ref, err
 }

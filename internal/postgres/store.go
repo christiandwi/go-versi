@@ -178,3 +178,32 @@ func (tx *storeTx) GetCommit(ctx context.Context, id engine.CommitID) (engine.Co
 
 	return commit, nil
 }
+
+func (tx *storeTx) SetRef(ctx context.Context, ref engine.Ref) error {
+	_, err := tx.tx.ExecContext(ctx, `
+		INSERT INTO refs (repository_id, name, commit_id, updated_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (repository_id, name)
+		DO UPDATE SET commit_id = EXCLUDED.commit_id, updated_at = EXCLUDED.updated_at
+	`, ref.RepositoryID, ref.Name, ref.CommitID, ref.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("set ref: %w", err)
+	}
+	return nil
+}
+
+func (tx *storeTx) GetRef(ctx context.Context, repoID engine.RepositoryID, name string) (engine.Ref, error) {
+	var ref engine.Ref
+	err := tx.tx.QueryRowContext(ctx, `
+		SELECT repository_id, name, commit_id, updated_at
+		FROM refs
+		WHERE repository_id = $1 AND name = $2
+	`, repoID, name).Scan(&ref.RepositoryID, &ref.Name, &ref.CommitID, &ref.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return engine.Ref{}, fmt.Errorf("%w: ref %q", engine.ErrNotFound, name)
+	}
+	if err != nil {
+		return engine.Ref{}, fmt.Errorf("get ref: %w", err)
+	}
+	return ref, nil
+}

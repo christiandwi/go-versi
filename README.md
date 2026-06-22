@@ -42,7 +42,7 @@ go run .
 ```
 
 The demo creates `repo-1`, reads it back from PostgreSQL, creates a
-`README.md` object, then reads that object back too, then commit and get the commit.
+`README.md` object, reads that object back too, commit and get the commit, set and get the ref (pointer to the latest commit)
 If `repo-1` already exists, it reads the existing repository instead.
 
 ## Docker

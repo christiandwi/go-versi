@@ -266,6 +266,104 @@ func TestCreateCommitRejectsObjectFromDifferentRepository(t *testing.T) {
 	}
 }
 
+func TestSetRef(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, commit := createRepositoryObjectCommit(t, ctx, app)
+
+	ref, err := app.SetRef(ctx, repo.ID, "main", commit.ID)
+	if err != nil {
+		t.Fatalf("SetRef() error = %v", err)
+	}
+
+	if ref.RepositoryID != repo.ID {
+		t.Fatalf("repository id = %q, want %q", ref.RepositoryID, repo.ID)
+	}
+	if ref.Name != "main" {
+		t.Fatalf("ref name = %q, want %q", ref.Name, "main")
+	}
+	if ref.CommitID != commit.ID {
+		t.Fatalf("commit id = %q, want %q", ref.CommitID, commit.ID)
+	}
+}
+
+func TestGetRef(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, commit := createRepositoryObjectCommit(t, ctx, app)
+	created, err := app.SetRef(ctx, repo.ID, "main", commit.ID)
+	if err != nil {
+		t.Fatalf("SetRef() error = %v", err)
+	}
+
+	found, err := app.GetRef(ctx, repo.ID, "main")
+	if err != nil {
+		t.Fatalf("GetRef() error = %v", err)
+	}
+
+	if found.RepositoryID != created.RepositoryID {
+		t.Fatalf("repository id = %q, want %q", found.RepositoryID, created.RepositoryID)
+	}
+	if found.Name != created.Name {
+		t.Fatalf("ref name = %q, want %q", found.Name, created.Name)
+	}
+	if found.CommitID != created.CommitID {
+		t.Fatalf("commit id = %q, want %q", found.CommitID, created.CommitID)
+	}
+}
+
+func TestSetRefMovesExistingRef(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, first := createRepositoryObjectCommit(t, ctx, app)
+	secondObject, err := app.CreateObject(ctx, repo.ID, "main.go", []byte("package main"))
+	if err != nil {
+		t.Fatalf("CreateObject() error = %v", err)
+	}
+	second, err := app.CreateCommit(ctx, repo.ID, []engine.ObjectID{secondObject.ID}, "second commit")
+	if err != nil {
+		t.Fatalf("CreateCommit() error = %v", err)
+	}
+
+	if _, err := app.SetRef(ctx, repo.ID, "main", first.ID); err != nil {
+		t.Fatalf("SetRef(first) error = %v", err)
+	}
+	if _, err := app.SetRef(ctx, repo.ID, "main", second.ID); err != nil {
+		t.Fatalf("SetRef(second) error = %v", err)
+	}
+
+	found, err := app.GetRef(ctx, repo.ID, "main")
+	if err != nil {
+		t.Fatalf("GetRef() error = %v", err)
+	}
+
+	if found.CommitID != second.ID {
+		t.Fatalf("commit id = %q, want %q", found.CommitID, second.ID)
+	}
+}
+
+func TestSetRefRejectsCommitFromDifferentRepository(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repoA, commitA := createRepositoryObjectCommit(t, ctx, app)
+	repoB, err := app.CreateRepository(ctx, uniqueRepositoryName(t)+"-b")
+	if err != nil {
+		t.Fatalf("CreateRepository(repoB) error = %v", err)
+	}
+
+	_, err = app.SetRef(ctx, repoB.ID, "main", commitA.ID)
+	if !errors.Is(err, engine.ErrValidation) {
+		t.Fatalf("SetRef() error = %v, want ErrValidation", err)
+	}
+	if repoA.ID == repoB.ID {
+		t.Fatal("test setup created duplicate repositories")
+	}
+}
+
 func newTestEngine(t *testing.T) *engine.Engine {
 	t.Helper()
 
@@ -292,4 +390,23 @@ func newTestEngine(t *testing.T) *engine.Engine {
 func uniqueRepositoryName(t *testing.T) string {
 	t.Helper()
 	return fmt.Sprintf("%s-%d", t.Name(), time.Now().UnixNano())
+}
+
+func createRepositoryObjectCommit(t *testing.T, ctx context.Context, app *engine.Engine) (engine.Repository, engine.Commit) {
+	t.Helper()
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+	obj, err := app.CreateObject(ctx, repo.ID, "README.md", []byte("hello"))
+	if err != nil {
+		t.Fatalf("CreateObject() error = %v", err)
+	}
+	commit, err := app.CreateCommit(ctx, repo.ID, []engine.ObjectID{obj.ID}, "initial commit")
+	if err != nil {
+		t.Fatalf("CreateCommit() error = %v", err)
+	}
+
+	return repo, commit
 }

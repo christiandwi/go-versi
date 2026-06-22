@@ -78,4 +78,18 @@ func main() {
 	}
 
 	fmt.Println("found commit:", foundCommit.ID, foundCommit.Message)
+
+	ref, err := app.SetRef(ctx, repo.ID, "main", commit.ID)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("set ref:", ref.Name, ref.CommitID)
+
+	foundRef, err := app.GetRef(ctx, repo.ID, "main")
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("found ref:", foundRef.Name, foundRef.CommitID)
 }
