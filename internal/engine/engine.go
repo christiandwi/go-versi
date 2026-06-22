@@ -20,6 +20,7 @@ type Tx interface {
 	GetObjectSummary(ctx context.Context, id ObjectID) (ObjectSummary, error)
 	CreateCommit(ctx context.Context, commit Commit) error
 	GetCommit(ctx context.Context, id CommitID) (Commit, error)
+	CreateRef(ctx context.Context, ref Ref) error
 	SetRef(ctx context.Context, ref Ref) error
 	GetRef(ctx context.Context, repoID RepositoryID, name string) (Ref, error)
 }
@@ -252,6 +253,61 @@ func (e *Engine) GetRef(ctx context.Context, repoID RepositoryID, name string) (
 		return err
 	})
 	return ref, err
+}
+
+func (e *Engine) CreateBranch(ctx context.Context, repoID RepositoryID, branchName string, fromRefName string) (Ref, error) {
+	if repoID == "" {
+		return Ref{}, fmt.Errorf("%w: repository id is required", ErrValidation)
+	}
+
+	branchName = strings.TrimSpace(branchName)
+	if branchName == "" {
+		return Ref{}, fmt.Errorf("%w: branch name is required", ErrValidation)
+	}
+
+	fromRefName = strings.TrimSpace(fromRefName)
+	if fromRefName == "" {
+		return Ref{}, fmt.Errorf("%w: source ref name is required", ErrValidation)
+	}
+
+	ref := Ref{
+		RepositoryID: repoID,
+		Name:         branchName,
+		UpdatedAt:    e.now().UTC(),
+	}
+
+	err := e.store.WithTx(ctx, func(tx Tx) error {
+		if _, err := tx.GetRepository(ctx, repoID); err != nil {
+			return err
+		}
+
+		source, err := tx.GetRef(ctx, repoID, fromRefName)
+		if err != nil {
+			return err
+		}
+
+		commit, err := tx.GetCommit(ctx, source.CommitID)
+		if err != nil {
+			return err
+		}
+		if commit.RepositoryID != repoID {
+			return fmt.Errorf("%w: source ref %q points to another repository", ErrValidation, fromRefName)
+		}
+
+		if _, err := tx.GetRef(ctx, repoID, branchName); err == nil {
+			return fmt.Errorf("%w: branch %q already exists", ErrConflict, branchName)
+		} else if !errors.Is(err, ErrNotFound) {
+			return err
+		}
+
+		ref.CommitID = source.CommitID
+		return tx.CreateRef(ctx, ref)
+	})
+	if err != nil {
+		return Ref{}, err
+	}
+
+	return ref, nil
 }
 
 func (e *Engine) Log(ctx context.Context, repoID RepositoryID, refName string) ([]Commit, error) {

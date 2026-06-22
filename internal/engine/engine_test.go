@@ -320,6 +320,125 @@ func TestGetRef(t *testing.T) {
 	}
 }
 
+func TestCreateBranch(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+	commit, _, err := app.CommitToRef(ctx, repo.ID, "main", []engine.CommitChange{
+		{Path: "README.md", Data: []byte("hello")},
+	}, "initial commit")
+	if err != nil {
+		t.Fatalf("CommitToRef() error = %v", err)
+	}
+
+	branch, err := app.CreateBranch(ctx, repo.ID, "feature", "main")
+	if err != nil {
+		t.Fatalf("CreateBranch() error = %v", err)
+	}
+
+	if branch.Name != "feature" {
+		t.Fatalf("branch name = %q, want %q", branch.Name, "feature")
+	}
+	if branch.CommitID != commit.ID {
+		t.Fatalf("branch commit id = %q, want %q", branch.CommitID, commit.ID)
+	}
+}
+
+func TestCreateBranchRejectsExistingBranch(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+	if _, _, err := app.CommitToRef(ctx, repo.ID, "main", []engine.CommitChange{
+		{Path: "README.md", Data: []byte("hello")},
+	}, "initial commit"); err != nil {
+		t.Fatalf("CommitToRef() error = %v", err)
+	}
+	if _, err := app.CreateBranch(ctx, repo.ID, "feature", "main"); err != nil {
+		t.Fatalf("CreateBranch(first) error = %v", err)
+	}
+
+	_, err = app.CreateBranch(ctx, repo.ID, "feature", "main")
+	if !errors.Is(err, engine.ErrConflict) {
+		t.Fatalf("CreateBranch(second) error = %v, want ErrConflict", err)
+	}
+}
+
+func TestCreateBranchRequiresExistingSourceRef(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+
+	_, err = app.CreateBranch(ctx, repo.ID, "feature", "missing")
+	if !errors.Is(err, engine.ErrNotFound) {
+		t.Fatalf("CreateBranch() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestCommitToBranchDoesNotMoveMain(t *testing.T) {
+	ctx := context.Background()
+	app := newTestEngine(t)
+
+	repo, err := app.CreateRepository(ctx, uniqueRepositoryName(t))
+	if err != nil {
+		t.Fatalf("CreateRepository() error = %v", err)
+	}
+	mainCommit, _, err := app.CommitToRef(ctx, repo.ID, "main", []engine.CommitChange{
+		{Path: "README.md", Data: []byte("hello")},
+	}, "initial commit")
+	if err != nil {
+		t.Fatalf("CommitToRef(main) error = %v", err)
+	}
+	if _, err := app.CreateBranch(ctx, repo.ID, "feature", "main"); err != nil {
+		t.Fatalf("CreateBranch() error = %v", err)
+	}
+
+	featureCommit, _, err := app.CommitToRef(ctx, repo.ID, "feature", []engine.CommitChange{
+		{Path: "README.md", Data: []byte("hello feature")},
+	}, "feature commit")
+	if err != nil {
+		t.Fatalf("CommitToRef(feature) error = %v", err)
+	}
+
+	mainRef, err := app.GetRef(ctx, repo.ID, "main")
+	if err != nil {
+		t.Fatalf("GetRef(main) error = %v", err)
+	}
+	if mainRef.CommitID != mainCommit.ID {
+		t.Fatalf("main commit id = %q, want %q", mainRef.CommitID, mainCommit.ID)
+	}
+
+	featureRef, err := app.GetRef(ctx, repo.ID, "feature")
+	if err != nil {
+		t.Fatalf("GetRef(feature) error = %v", err)
+	}
+	if featureRef.CommitID != featureCommit.ID {
+		t.Fatalf("feature commit id = %q, want %q", featureRef.CommitID, featureCommit.ID)
+	}
+
+	featureLog, err := app.Log(ctx, repo.ID, "feature")
+	if err != nil {
+		t.Fatalf("Log(feature) error = %v", err)
+	}
+	if len(featureLog) != 2 {
+		t.Fatalf("feature log len = %d, want 2", len(featureLog))
+	}
+	if featureLog[0].ID != featureCommit.ID || featureLog[1].ID != mainCommit.ID {
+		t.Fatalf("feature log = [%s %s], want [%s %s]", featureLog[0].ID, featureLog[1].ID, featureCommit.ID, mainCommit.ID)
+	}
+}
+
 func TestSetRefMovesExistingRef(t *testing.T) {
 	ctx := context.Background()
 	app := newTestEngine(t)

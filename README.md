@@ -11,6 +11,7 @@ Current features:
 - create and get a commit
 - link each new commit to its previous commit
 - set and get a ref, such as `main`
+- create a branch from an existing ref
 - list commit history from a ref
 - read the current snapshot from a ref
 - avoid creating a new object, commit, or ref update when the file paths and content did not change
@@ -59,6 +60,7 @@ The demo:
 - creates a commit only when content changed
 - links the new commit to the previous `main` commit
 - sets `main` only when content changed
+- creates or loads a `feature` branch from `main`
 - reads the current ref and commit back from PostgreSQL
 - prints commit history from newest to oldest
 - prints the current snapshot files

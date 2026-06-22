@@ -205,6 +205,25 @@ func (tx *storeTx) GetCommit(ctx context.Context, id engine.CommitID) (engine.Co
 	return commit, nil
 }
 
+func (tx *storeTx) CreateRef(ctx context.Context, ref engine.Ref) error {
+	result, err := tx.tx.ExecContext(ctx, `
+		INSERT INTO refs (repository_id, name, commit_id, updated_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (repository_id, name) DO NOTHING
+	`, ref.RepositoryID, ref.Name, ref.CommitID, ref.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("create ref: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("create ref rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("%w: ref %q already exists", engine.ErrConflict, ref.Name)
+	}
+	return nil
+}
+
 func (tx *storeTx) SetRef(ctx context.Context, ref engine.Ref) error {
 	_, err := tx.tx.ExecContext(ctx, `
 		INSERT INTO refs (repository_id, name, commit_id, updated_at)

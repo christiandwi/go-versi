@@ -76,6 +76,18 @@ func main() {
 
 	fmt.Println("found ref:", foundRef.Name, foundRef.CommitID)
 
+	branch, err := app.CreateBranch(ctx, repo.ID, "feature", "main")
+	if errors.Is(err, engine.ErrConflict) {
+		branch, err = app.GetRef(ctx, repo.ID, "feature")
+		fmt.Println("branch exists:", branch.Name, branch.CommitID)
+	}
+	if err != nil {
+		panic(err)
+	}
+	if branch.Name != "" && branch.CommitID == foundRef.CommitID {
+		fmt.Println("branch:", branch.Name, branch.CommitID)
+	}
+
 	foundCommit, err := app.GetCommit(ctx, foundRef.CommitID)
 	if err != nil {
 		panic(err)
